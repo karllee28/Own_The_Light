@@ -1,0 +1,8 @@
+{
+  "name": "own-the-light-test",
+  "private": true,
+  "dependencies": {
+    "@serialport/parser-readline": "^12.0.0",
+    "serialport": "^12.0.0"
+  }
+}
