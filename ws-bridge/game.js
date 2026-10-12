@@ -5,8 +5,8 @@
 // at random to distract. Blue keys score nothing. The round lasts 30 seconds.
 // The final score stays on the display until the next round starts.
 //
-//   Key:   A B C D E F G H I J
-//   Chain: 1 2 3 4 5 6 7 8 9 10
+//   Key:   A B C D E F G H I J  K  L
+//   Chain: 1 2 3 4 5 6 7 8 9 10 11 12
 //
 //   On startup pick a difficulty first: 1 easy, 2 medium, 3 hard.
 //   It can be changed again between rounds.
@@ -19,7 +19,7 @@ const readline = require("readline");
 const WebSocket = require("ws");
 
 const url = process.argv[2] || "ws://localhost:8080";
-const KEYS = "abcdefghij";
+const KEYS = "abcdefghijkl";
 const ROUND_SECONDS = 30;
 // oranges: how many orange lights are on at once.
 // orangeMs: how long each orange light stays before it jumps.
@@ -176,7 +176,7 @@ function onKey(str, key) {
 
 socket.on("open", () => {
   console.log("Connected to " + url + ".");
-  console.log("Keys A-J = chains 1-10. Chase the orange lights, ignore the blue one.");
+  console.log("Keys A-L = chains 1-12. Chase the orange lights, ignore the blue one.");
   printMenu();
 
   send("A");

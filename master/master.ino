@@ -2,7 +2,7 @@
 // USB Serial (115200) receives commands from the Node.js test.
 // D2 TX sends the score number to the score Nano D6 at 9600 (SoftwareSerial).
 // D3 TX sends the time in seconds to the time Nano D6 at 9600 (SoftwareSerial).
-// Pins D4-D12 and A0 each drive a chain of SK6812 RGB (index 1-10). No buttons.
+// Pins D4-D12, A0, A3 and A4 each drive a chain of SK6812 RGB (index 1-12). No buttons.
 // A1 and A2 are unused SoftwareSerial RX pins. Leave them unconnected.
 //
 // S15     score
@@ -17,7 +17,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <SoftwareSerial.h>
 
-static const uint8_t LED_COUNT = 10;
+static const uint8_t LED_COUNT = 12;
 static const uint8_t PIXELS_PER_PIN = 16;
 // SK6812 RGB strip: green, red, blue, no white channel.
 // If blue and orange are still swapped, use NEO_RGB + NEO_KHZ800.
@@ -31,7 +31,7 @@ SoftwareSerial timeLink(A2, 3);
 
 // Created in setup(). An array initializer copies each object and then
 // frees its pixel buffer, so show() would send nothing.
-static const uint8_t LED_PINS[LED_COUNT] = {4, 5, 6, 7, 8, 9, 10, 11, 12, A0};
+static const uint8_t LED_PINS[LED_COUNT] = {4, 5, 6, 7, 8, 9, 10, 11, 12, A0, A3, A4};
 Adafruit_NeoPixel *leds[LED_COUNT];
 
 char lineBuf[32];

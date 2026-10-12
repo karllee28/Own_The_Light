@@ -1,6 +1,6 @@
 # Own The Light
 
-Three Arduino Nano boards. The master reads commands from a Node.js script over USB, then forwards the score to one Nano and the time to the other. Those two only listen. The time Nano drives one 8x32 WS2812B matrix. The score Nano drives two 16x16 WS2812B panels side by side. The master also drives 10 SK6812 RGB chains, 16 pixels each (blue, orange, or off). There are no buttons.
+Three Arduino Nano boards. The master reads commands from a Node.js script over USB, then forwards the score to one Nano and the time to the other. Those two only listen. The time Nano drives one 8x32 WS2812B matrix. The score Nano drives two 16x16 WS2812B panels side by side. The master also drives 12 SK6812 RGB chains, 16 pixels each (blue, orange, or off). There are no buttons.
 
 A classic Nano has only one hardware serial port, and that port is the USB connection. The links between Nanos use SoftwareSerial on other pins, so USB can stay plugged in.
 
@@ -9,7 +9,7 @@ Node.js  --USB-->  Master Nano  --D2-->  Score Nano D6  -->  two 16x16 panels
                          |
                          +--D3-->  Time Nano D6   -->  8x32 matrix
                          |
-                         +-->  10 SK6812 chains (D4-D12 and A0)
+                         +-->  12 SK6812 chains (D4-D12, A0, A3, A4)
 ```
 
 USB baud rate is **115200**. Each link between Nanos is **9600**. All three boards are 5V, so those two wires do not need a level shifter.
@@ -20,11 +20,11 @@ Open each folder as its own Arduino IDE sketch. Install the **Adafruit NeoPixel*
 
 | Board | Sketch | Role |
 | --- | --- | --- |
-| Master Nano | [master/master.ino](master/master.ino) | Reads USB commands, forwards score and time, drives 10 pixels |
+| Master Nano | [master/master.ino](master/master.ino) | Reads USB commands, forwards score and time, drives 12 light chains |
 | Score Nano | [score_nano/score_nano.ino](score_nano/score_nano.ino) | Draws the score (0–9999) in red on two 16x16 panels |
 | Time Nano | [time_nano/time_nano.ino](time_nano/time_nano.ino) | Holds seconds as `MM:SS` (90 → `01:30`), red |
 
-On boot the matrices show `0` and `00:00`, the 10 pixels are off, and the master prints `READY` on USB.
+On boot the matrices show `0` and `00:00`, the 12 chains are off, and the master prints `READY` on USB.
 
 ## Pin guide
 
@@ -48,6 +48,8 @@ Leave D0 and D1 free. Those pins are the USB serial port.
 | D11 | SK6812 chain 8 data (16 pixels) |
 | D12 | SK6812 chain 9 data (16 pixels) |
 | A0 | SK6812 chain 10 data (16 pixels) |
+| A3 | SK6812 chain 11 data (16 pixels) |
+| A4 | SK6812 chain 12 data (16 pixels) |
 | A1, A2 | Unused. Leave them open. |
 
 Do not tie the two display D6 pins together. Each display has its own wire from the master.
@@ -70,9 +72,9 @@ The score sketch uses `LAYOUT_ROW` for each 16x16 panel. Set it to `LAYOUT_COLUM
 
 ### Power
 
-- Each 8x32 matrix is 256 WS2812B pixels. Power it from a 5V supply that can feed the strip. Do not power a matrix from the Arduino 5V pin.
-- Each of the 10 master chains is 16 pixels on one data pin (`PIXELS_PER_PIN` in `master.ino`). `B1` lights all 16 pixels on D4. `F1` turns that chain off without changing the others.
-- Join all grounds: all three Nanos, both matrices, and the 10 pixels.
+- The time display is one 8x32 matrix (256 WS2812B pixels). The score display is two 16x16 panels (512 WS2812B pixels). Power them from a 5V supply that can feed all the pixels. Do not power any panel from the Arduino 5V pin.
+- Each of the 12 master chains is 16 pixels on one data pin (`PIXELS_PER_PIN` in `master.ino`), 192 pixels in total. `B1` lights all 16 pixels on D4. `F1` turns that chain off without changing the others.
+- Join all grounds: all three Nanos, the time matrix, both score panels, and the 12 chains.
 
 ## Serial commands
 
@@ -88,9 +90,9 @@ Send one command per line to the master USB port at **115200**. The master answe
 | `S0` | `SCORE 0` | Score shows `0`. |
 | `T90` | `TIME 90` | Sends `90` out D3. The time Nano shows `01:30` and holds it. |
 | `T0` | `TIME 0` | Time shows `00:00` and holds it. |
-| `A` | `OFF ALL` | Turns all 10 chains off. |
+| `A` | `OFF ALL` | Turns all 12 chains off. |
 
-The time Nano clamps anything above 99:59 to `99:59`. The master accepts a time up to 99999 and still replies `OK`.
+The time Nano clamps 6000 to 32767 seconds to `99:59`. The master accepts a time up to 99999 and still replies `OK`. However, values above 32767 overflow on the time Nano and show a wrong time, so keep times at 5999 or below.
 
 What the display Nanos actually receive:
 
@@ -115,6 +117,8 @@ A color command paints every pixel on that pin. `F` turns off only that pin.
 | 8 | D11 | `B8` | `O8` | `F8` |
 | 9 | D12 | `B9` | `O9` | `F9` |
 | 10 | A0 | `B10` | `O10` | `F10` |
+| 11 | A3 | `B11` | `O11` | `F11` |
+| 12 | A4 | `B12` | `O12` | `F12` |
 
 Blue is `0,0,255`. Orange is `255,80,0`. Off is `0,0,0`. The chains are SK6812 RGB, so there is no white channel.
 
@@ -129,7 +133,7 @@ Blue is `0,0,255`. Orange is `255,80,0`. Off is `0,0,0`. The chains are SK6812 R
 | `OFF 1` | `F1` |
 | `OFF ALL` | `A` |
 
-`BLUE`, `ORANGE`, and `OFF` take a chain number from 1 to 10. `OFF 2` through `OFF 10` turn off that chain only, the same as `F2` through `F10`.
+`BLUE`, `ORANGE`, and `OFF` take a chain number from 1 to 12. `OFF 2` through `OFF 12` turn off that chain only, the same as `F2` through `F12`.
 
 ### Replies
 
@@ -137,7 +141,7 @@ Blue is `0,0,255`. Orange is `255,80,0`. Off is `0,0,0`. The chains are SK6812 R
 | --- | --- |
 | `READY` | Master finished booting. |
 | `OK` | Command accepted. For `S` and `T`, the number was written to the display link. |
-| `ERR` | Empty extra words, a missing number, score above 9999, time above 99999, or a chain number outside 1–10. |
+| `ERR` | Empty extra words, a missing number, score above 9999, time above 99999, or a chain number outside 1–12. |
 
 ## Node.js test
 
@@ -159,7 +163,7 @@ node send.js COM5
 > quit
 ```
 
-The script prints `READY` when the Nano finishes resetting, then prints `OK` or `ERR` after each command. `quit` or Ctrl+C closes the port.
+Opening the port resets the Nano. Wait until the script prints `READY` before typing. Commands typed earlier are lost. After that the script prints `OK` or `ERR` after each command. Type one command at a time, because the Nano can miss bytes from commands pasted back to back. `quit` or Ctrl+C closes the port.
 
 ## Construct 3 over WebSocket
 
@@ -181,9 +185,47 @@ An optional second argument changes the WebSocket port: `node bridge.js COM5 900
 
 One message can carry one command, or several separated by newlines (`"B1" & newline & "O3"`).
 
+### Game page in the browser
+
+The quickest way to start everything is to double-click **`run-all.bat`** in the project folder. It installs the packages on the first run, finds the master Nano's COM port, starts the bridge, and opens the game page full screen in kiosk mode (Edge, or Chrome if Edge is missing). If more than one COM port is found, it lists them and asks which one to use. To skip the question, run `run-all.bat COM5` from a terminal.
+
+Press **F1** on the game page to exit. F1 ends any round, turns all lights off, closes the full-screen window, and stops the bridge. Right-click is disabled on the page so players cannot open browser menus. If the page has lost its connection to the bridge, F1 only closes the window, and Ctrl+C in the script window stops the bridge. To start the kiosk without the script, run `node bridge.js COM5 --kiosk` in `ws-bridge`.
+
+The bridge also serves a game page. Start the bridge, wait for `Nano: READY`, then open **http://localhost:8080** in a browser. The page connects to the bridge automatically and shows `Bridge connected` in the top right corner.
+
+```
+cd ws-bridge
+npm install
+node bridge.js COM5
+```
+
+The page draws the board from the switch and LED layout drawing. Lights 1–10 are in the same places as in the drawing. Lights 11 and 12 sit at the ends of the two diagonal lines that start at 1 and 2. The black box at the top shows the score and time, like the matrix displays.
+
+To play, click or tap a light, or press its key (`A`–`L` for lights 1–12). SPACE or **Start** begins a round. ESC or **Stop** ends it early. Lights on the page change color together with the real chains.
+
+Settings can be changed between rounds and are saved in the browser:
+
+| Group | Setting | Range | Default |
+| --- | --- | --- | --- |
+| Difficulty | Mode | Easy, Medium, Hard, Custom | Easy |
+| Difficulty | Orange lights at once | 1–10 | 6 |
+| Difficulty | Orange stays (seconds) | 0.2–10 | 2.0 |
+| Difficulty | Blue distraction | On or off | On |
+| Difficulty | Blue jumps every (seconds) | 0.2–10 | 1.2 |
+| Time | Round length (seconds) | 5–5999 | 30 |
+| Score | Points per orange hit | 1–100 | 1 |
+| Score | Penalty for hitting blue | 0–100 | 0 |
+| Score | Penalty for an unlit button | 0–100 | 0 |
+
+Picking Easy, Medium, or Hard fills in the three timing fields with the values from the difficulty table below. Editing any of them switches the mode to Custom. The score never drops below 0 or goes above 9999. The page also keeps the best score for each mode.
+
+The page and `game.js` both send commands to the same lights, so run only one of them at a time.
+
 ### Keyboard game without Construct 3
 
 `game.js` is a keyboard version of the game that talks only to the WebSocket server in `bridge.js`. Run it in a normal terminal window (PowerShell or Command Prompt) so it can read single key presses.
+
+There are no physical buttons. The player uses 12 keys on the PC keyboard, `A` to `L`, one for each light chain. `1`, `2`, `3`, SPACE, and ESC choose the difficulty, start a round, and quit.
 
 #### How to operate
 
@@ -206,7 +248,7 @@ One message can carry one command, or several separated by newlines (`"B1" & new
 
 3. The game asks for a difficulty first. Press `1`, `2`, or `3`. SPACE does nothing until a difficulty is picked.
 4. Press SPACE to start a 30-second round. The score resets to 0 and the time display shows `00:30`.
-5. Chase the orange light by pressing its key (A–J). Ignore the blue light.
+5. Chase the orange light by pressing its key (A–L). Ignore the blue light.
 6. When time runs out, all chains turn off and the final score stays on the display.
 7. Pick another difficulty if you like, then press SPACE to play again. Press ESC to quit.
 
@@ -218,12 +260,12 @@ One message can carry one command, or several separated by newlines (`"B1" & new
 | `2` | Medium mode | On startup and between rounds |
 | `3` | Hard mode | On startup and between rounds |
 | SPACE | Start a round | After a difficulty is picked |
-| `A`–`J` | Hit chain 1–10 | During a round |
+| `A`–`L` | Hit chain 1–12 | During a round |
 | ESC or Ctrl+C | Quit | Any time |
 
-| Key | A | B | C | D | E | F | G | H | I | J |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Chain | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| Key | A | B | C | D | E | F | G | H | I | J | K | L |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Chain | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 
 #### Rules
 
@@ -255,5 +297,7 @@ Add the **WebSocket** plugin to the project, then use events like these:
 | Light chain blue | WebSocket: Send text `"B" & ChainNumber` |
 | Light chain orange | WebSocket: Send text `"O" & ChainNumber` |
 | Turn chain off | WebSocket: Send text `"F" & ChainNumber` |
+
+The bridge accepts connections from any computer on the local network, not only this PC. Anyone who can reach port 8080 can send commands to the lights.
 
 Preview in the browser and NW.js or desktop exports can reach `ws://localhost`. A game hosted on an `https://` page would need `wss://`, which this bridge does not provide.

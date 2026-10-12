@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Own The Light</title>
+<style>
+  :root {
+    --magenta: #e600e6;
+    --magenta-dim: #f2b6f2;
+    --orange: #ff7a00;
+    --blue: #1f6bff;
+    --red: #ff3030;
+    --bg: #15151b;
+    --panel: #22222b;
+    --line: #34343f;
+    --text: #ececf1;
+    --muted: #9a9aa8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 20px; margin: 0; letter-spacing: 1px; }
+  h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .status { font-size: 13px; padding: 4px 12px; border-radius: 999px; background: #5a1d1d; }
+  .status.on { background: #1d5a2c; }
+  main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 20px;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .board {
+    flex: 1 1 520px;
+    max-width: 700px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 8px;
+  }
+  svg { width: 100%; height: auto; display: block; user-select: none; }
+  .side { flex: 0 1 380px; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: var(--panel); border-radius: 12px; padding: 16px; }
+  .scoreboard { display: flex; justify-content: space-around; text-align: center; }
+  .scoreboard .value {
+    font-size: 48px;
+    font-weight: 700;
+    color: var(--red);
+    font-variant-numeric: tabular-nums;
+  }
+  .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .message { margin-top: 10px; text-align: center; color: var(--muted); min-height: 1.4em; }
+  .buttons { display: flex; gap: 10px; }
+  button {
+    flex: 1;
+    padding: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #fff;
+  }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #startBtn { background: #1f9d45; }
+  #stopBtn { background: #c0392b; }
+  #resetBtn { background: #44444f; flex: none; padding: 8px 12px; font-size: 13px; }
+  fieldset { border: 0; padding: 0; margin: 0; }
+  fieldset:disabled { opacity: 0.5; }
+  .group + .group { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .row label { font-size: 14px; }
+  .row input[type="number"], .row select {
+    width: 110px;
+    padding: 6px 8px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: #15151b;
+    color: var(--text);
+  }
+  .hint { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  kbd {
+    background: #33333d;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 12px;
+  }
+
+  .wire { stroke: var(--magenta); stroke-width: 12; stroke-linecap: square; }
+  .node { cursor: pointer; }
+  .node circle { fill: var(--magenta-dim); stroke: #555; stroke-width: 2; transition: fill 0.08s; }
+  .node text {
+    pointer-events: none;
+    font-size: 28px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: central;
+    fill: #333;
+  }
+  .node.orange circle { fill: var(--orange); stroke: #ffb066; stroke-width: 6; }
+  .node.blue circle { fill: var(--blue); stroke: #8fb4ff; stroke-width: 6; }
+  .node.orange text, .node.blue text { fill: #fff; }
+  .node.good circle { stroke: #19c43a; stroke-width: 12; }
+  .node.bad circle { stroke: #e02020; stroke-width: 12; }
+  .screen { fill: #111; }
+  .screen-text {
+    fill: var(--red);
+    font-size: 30px;
+    font-weight: 700;
+    font-family: Consolas, monospace;
+    dominant-baseline: central;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>OWN THE LIGHT</h1>
+  <span id="status" class="status">Bridge offline</span>
+</header>
+
+<main>
+  <div class="board">
+    <svg id="board" viewBox="30 80 900 930" aria-label="Game board"></svg>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <div class="scoreboard">
+        <div>
+          <div class="label">Score</div>
+          <div id="score" class="value">0</div>
+        </div>
+        <div>
+          <div class="label">Time</div>
+          <div id="time" class="value">00:30</div>
+        </div>
+      </div>
+      <div id="message" class="message">Pick a difficulty, then press Start.</div>
+    </div>
+
+    <div class="card buttons">
+      <button id="startBtn">Start <kbd>Space</kbd></button>
+      <button id="stopBtn" disabled>Stop <kbd>Esc</kbd></button>
+    </div>
+
+    <div class="card">
+      <fieldset id="settings">
+        <div class="group">
+          <h2>Difficulty</h2>
+          <div class="row">
+            <label for="difficulty">Mode</label>
+            <select id="difficulty">
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="oranges">Orange lights at once</label>
+            <input id="oranges" type="number" min="1" max="10" step="1">
+          </div>
+          <div class="row">
+            <label for="orangeSec">Orange stays (seconds)</label>
+            <input id="orangeSec" type="number" min="0.2" max="10" step="0.1">
+          </div>
+          <div class="row">
+            <label for="blueOn">Blue distraction</label>
+            <input id="blueOn" type="checkbox">
+          </div>
+          <div class="row">
+            <label for="blueSec">Blue jumps every (seconds)</label>
+            <input id="blueSec" type="number" min="0.2" max="10" step="0.1">
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Time</h2>
+          <div class="row">
+            <label for="roundSeconds">Round length (seconds)</label>
+            <input id="roundSeconds" type="number" min="5" max="5999" step="1">
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Score</h2>
+          <div class="row">
+            <label for="pointsPerHit">Points per orange hit</label>
+            <input id="pointsPerHit" type="number" min="1" max="100" step="1">
+          </div>
+          <div class="row">
+            <label for="bluePenalty">Penalty for hitting blue</label>
+            <input id="bluePenalty" type="number" min="0" max="100" step="1">
+          </div>
+          <div class="row">
+            <label for="missPenalty">Penalty for an unlit button</label>
+            <input id="missPenalty" type="number" min="0" max="100" step="1">
+          </div>
+          <div class="row">
+            <span class="label">Best score in this mode</span>
+            <span id="best">0</span>
+          </div>
+        </div>
+
+        <div class="group row">
+          <span class="hint">Settings are saved in this browser.</span>
+          <button id="resetBtn" type="button">Reset to defaults</button>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="card hint">
+      Click or tap a light, or press its key: <kbd>A</kbd>–<kbd>L</kbd> for lights 1–12.
+      Hit orange to score. Avoid blue.
+      Keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick Easy, Medium, Hard between rounds.
+      <kbd>F1</kbd> exits full screen and stops the game.
+    </div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+// Board positions from the "Switch and LED addressing" drawing.
+// 11 and 12 sit at the ends of the diagonal lines from 1 and 2.
+const POSITIONS = {
+  1: [110, 175], 2: [843, 175],
+  11: [285, 352], 12: [670, 352],
+  3: [110, 545], 4: [477, 545], 5: [843, 545],
+  6: [287, 738], 7: [666, 738],
+  8: [110, 912], 9: [477, 912], 10: [843, 912],
+};
+const WIRES = [
+  [1, 2], [1, 3], [3, 8], [1, 11], [2, 12], [2, 5], [5, 10],
+  [4, 6], [6, 8], [4, 9], [4, 7], [7, 10], [8, 9], [9, 10],
+];
+const CHAINS = 12;
+const KEYS = "abcdefghijkl";
+const SCORE_MAX = 9999;
+
+const PRESETS = {
+  easy: { name: "Easy", oranges: 6, orangeMs: 2000, blueMs: 1200 },
+  medium: { name: "Medium", oranges: 4, orangeMs: 1000, blueMs: 700 },
+  hard: { name: "Hard", oranges: 1, orangeMs: 600, blueMs: 400 },
+};
+const DEFAULTS = {
+  difficulty: "easy",
+  oranges: 6,
+  orangeMs: 2000,
+  blueOn: true,
+  blueMs: 1200,
+  roundSeconds: 30,
+  pointsPerHit: 1,
+  bluePenalty: 0,
+  missPenalty: 0,
+};
+const SETTINGS_KEY = "otl-settings";
+const BEST_KEY = "otl-best";
+
+const $ = (id) => document.getElementById(id);
+const ui = {
+  board: $("board"),
+  status: $("status"),
+  score: $("score"),
+  time: $("time"),
+  message: $("message"),
+  startBtn: $("startBtn"),
+  stopBtn: $("stopBtn"),
+  resetBtn: $("resetBtn"),
+  settings: $("settings"),
+  difficulty: $("difficulty"),
+  oranges: $("oranges"),
+  orangeSec: $("orangeSec"),
+  blueOn: $("blueOn"),
+  blueSec: $("blueSec"),
+  roundSeconds: $("roundSeconds"),
+  pointsPerHit: $("pointsPerHit"),
+  bluePenalty: $("bluePenalty"),
+  missPenalty: $("missPenalty"),
+  best: $("best"),
+};
+
+// ---------- Board drawing ----------
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const nodes = {};
+let screenScore = null;
+let screenTime = null;
+
+function svg(tag, attrs, parent) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    el.setAttribute(k, v);
+  }
+  parent.appendChild(el);
+  return el;
+}
+
+function drawBoard() {
+  const b = ui.board;
+  svg("polygon", {
+    points: "90,97 870,97 915,142 915,948 870,993 90,993 45,948 45,142",
+    fill: "#fff",
+    stroke: "#444",
+    "stroke-width": 2,
+  }, b);
+  for (const [a, c] of WIRES) {
+    const [x1, y1] = POSITIONS[a];
+    const [x2, y2] = POSITIONS[c];
+    svg("line", { x1, y1, x2, y2, class: "wire" }, b);
+  }
+  svg("rect", { x: 382, y: 240, width: 189, height: 62, rx: 4, class: "screen" }, b);
+  screenScore = svg("text", { x: 394, y: 271, class: "screen-text" }, b);
+  screenTime = svg("text", { x: 559, y: 271, class: "screen-text", "text-anchor": "end" }, b);
+
+  for (let chain = 1; chain <= CHAINS; chain++) {
+    const [cx, cy] = POSITIONS[chain];
+    const g = svg("g", { class: "node" }, b);
+    svg("circle", { cx, cy, r: 36 }, g);
+    const label = svg("text", { x: cx, y: cy }, g);
+    label.textContent = String(chain);
+    g.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      press(chain);
+    });
+    nodes[chain] = g;
+  }
+}
+
+// ---------- Settings ----------
+
+function clamp(value, min, max, fallback) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, value));
+}
+
+function loadSettings() {
+  try {
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
+
+function saveSettings(s) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    // Private mode or storage full: settings just won't persist.
+  }
+}
+
+function writeForm(s) {
+  ui.difficulty.value = s.difficulty;
+  ui.oranges.value = s.oranges;
+  ui.orangeSec.value = s.orangeMs / 1000;
+  ui.blueOn.checked = s.blueOn;
+  ui.blueSec.value = s.blueMs / 1000;
+  ui.blueSec.disabled = !s.blueOn;
+  ui.roundSeconds.value = s.roundSeconds;
+  ui.pointsPerHit.value = s.pointsPerHit;
+  ui.bluePenalty.value = s.bluePenalty;
+  ui.missPenalty.value = s.missPenalty;
+}
+
+function readForm() {
+  const n = (input) => Number(input.value);
+  return {
+    difficulty: ui.difficulty.value,
+    oranges: Math.round(clamp(n(ui.oranges), 1, 10, DEFAULTS.oranges)),
+    orangeMs: Math.round(clamp(n(ui.orangeSec), 0.2, 10, 2) * 1000),
+    blueOn: ui.blueOn.checked,
+    blueMs: Math.round(clamp(n(ui.blueSec), 0.2, 10, 1.2) * 1000),
+    roundSeconds: Math.round(clamp(n(ui.roundSeconds), 5, 5999, DEFAULTS.roundSeconds)),
+    pointsPerHit: Math.round(clamp(n(ui.pointsPerHit), 1, 100, 1)),
+    bluePenalty: Math.round(clamp(n(ui.bluePenalty), 0, 100, 0)),
+    missPenalty: Math.round(clamp(n(ui.missPenalty), 0, 100, 0)),
+  };
+}
+
+function applyPreset(key) {
+  const preset = PRESETS[key];
+  if (!preset) {
+    return;
+  }
+  ui.difficulty.value = key;
+  ui.oranges.value = preset.oranges;
+  ui.orangeSec.value = preset.orangeMs / 1000;
+  ui.blueSec.value = preset.blueMs / 1000;
+  settingsChanged();
+}
+
+function settingsChanged() {
+  settings = readForm();
+  saveSettings(settings);
+  ui.blueSec.disabled = !settings.blueOn;
+  if (!playing) {
+    showTime(settings.roundSeconds);
+  }
+  showBest();
+}
+
+function modeName() {
+  return PRESETS[settings.difficulty] ? PRESETS[settings.difficulty].name : "Custom";
+}
+
+function loadBest() {
+  try {
+    return JSON.parse(localStorage.getItem(BEST_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function showBest() {
+  ui.best.textContent = loadBest()[settings.difficulty] || 0;
+}
+
+function recordBest() {
+  const best = loadBest();
+  if (score > (best[settings.difficulty] || 0)) {
+    best[settings.difficulty] = score;
+    try {
+      localStorage.setItem(BEST_KEY, JSON.stringify(best));
+    } catch {
+      // Ignore storage errors.
+    }
+    return true;
+  }
+  return false;
+}
+
+// ---------- Bridge connection ----------
+
+let socket = null;
+
+function connect() {
+  socket = new WebSocket("ws://" + location.host);
+  socket.addEventListener("open", () => {
+    ui.status.textContent = "Bridge connected";
+    ui.status.classList.add("on");
+    if (playing) {
+      send("A", "S" + score, "T" + timeLeft, ...oranges.map((c) => "O" + c), ...(blue ? ["B" + blue] : []));
+    } else {
+      send("A");
+    }
+  });
+  socket.addEventListener("close", () => {
+    ui.status.textContent = "Bridge offline";
+    ui.status.classList.remove("on");
+    setTimeout(connect, 2000);
+  });
+}
+
+function send(...commands) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(commands.join("\n"));
+  }
+}
+
+// ---------- Game ----------
+
+let settings = loadSettings();
+let playing = false;
+let score = 0;
+let timeLeft = 0;
+let oranges = [];
+let orangeTimers = [];
+let blue = 0;
+let ticker = null;
+let blueTimer = null;
+
+function formatTime(seconds) {
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+  return mm + ":" + ss;
+}
+
+function showScore() {
+  ui.score.textContent = score;
+  screenScore.textContent = score;
+}
+
+function showTime(seconds) {
+  ui.time.textContent = formatTime(seconds);
+  screenTime.textContent = formatTime(seconds);
+}
+
+function render() {
+  for (let chain = 1; chain <= CHAINS; chain++) {
+    const node = nodes[chain];
+    node.classList.toggle("orange", oranges.includes(chain));
+    node.classList.toggle("blue", chain === blue);
+  }
+}
+
+function flash(chain, kind) {
+  const node = nodes[chain];
+  node.classList.add(kind);
+  setTimeout(() => node.classList.remove(kind), 200);
+}
+
+function randomChain(...avoid) {
+  let next = 0;
+  do {
+    next = 1 + Math.floor(Math.random() * CHAINS);
+  } while (avoid.includes(next));
+  return next;
+}
+
+function moveOrange(i, ...extra) {
+  const old = oranges[i];
+  oranges[i] = randomChain(...oranges, blue);
+  send("F" + old, "O" + oranges[i], ...extra);
+  scheduleOrange(i);
+  render();
+}
+
+function scheduleOrange(i) {
+  clearTimeout(orangeTimers[i]);
+  orangeTimers[i] = setTimeout(() => moveOrange(i), settings.orangeMs);
+}
+
+function moveBlue() {
+  const old = blue;
+  blue = randomChain(old, ...oranges);
+  send("F" + old, "B" + blue);
+  render();
+}
+
+function stopTimers() {
+  clearInterval(ticker);
+  clearInterval(blueTimer);
+  orangeTimers.forEach(clearTimeout);
+  ticker = blueTimer = null;
+  orangeTimers = [];
+}
+
+function setPlaying(value) {
+  playing = value;
+  ui.settings.disabled = value;
+  ui.startBtn.disabled = value;
+  ui.stopBtn.disabled = !value;
+}
+
+function startRound() {
+  if (playing) {
+    return;
+  }
+  settings = readForm();
+  saveSettings(settings);
+  writeForm(settings);
+
+  setPlaying(true);
+  score = 0;
+  timeLeft = settings.roundSeconds;
+  oranges = [];
+  for (let i = 0; i < settings.oranges; i++) {
+    oranges.push(randomChain(...oranges));
+  }
+  blue = settings.blueOn ? randomChain(...oranges) : 0;
+
+  const lights = oranges.map((c) => "O" + c);
+  if (blue) {
+    lights.push("B" + blue);
+  }
+  send("S0", "A", "T" + timeLeft, ...lights);
+  showScore();
+  showTime(timeLeft);
+  render();
+  ui.message.textContent = "Go! " + modeName() + " mode. Chase the orange lights.";
+
+  oranges.forEach((_, i) => scheduleOrange(i));
+  if (blue) {
+    blueTimer = setInterval(moveBlue, settings.blueMs);
+  }
+  ticker = setInterval(() => {
+    timeLeft--;
+    send("T" + timeLeft);
+    showTime(timeLeft);
+    if (timeLeft <= 0) {
+      endRound(false);
+    }
+  }, 1000);
+}
+
+function endRound(stopped) {
+  if (!playing) {
+    return;
+  }
+  stopTimers();
+  setPlaying(false);
+  oranges = [];
+  blue = 0;
+  timeLeft = 0;
+  send("A", "T0");
+  showTime(0);
+  render();
+  const newBest = recordBest();
+  showBest();
+  ui.message.textContent = (stopped ? "Stopped. " : "Time's up! ") +
+    modeName() + " score: " + score + (newBest ? " (new best)" : "");
+}
+
+function changeScore(delta) {
+  const next = Math.min(SCORE_MAX, Math.max(0, score + delta));
+  const changed = next !== score;
+  score = next;
+  showScore();
+  return changed;
+}
+
+function press(chain) {
+  if (!playing) {
+    return;
+  }
+  const i = oranges.indexOf(chain);
+  if (i >= 0) {
+    changeScore(settings.pointsPerHit);
+    flash(chain, "good");
+    moveOrange(i, "S" + score);
+    return;
+  }
+  const penalty = chain === blue ? settings.bluePenalty : settings.missPenalty;
+  flash(chain, "bad");
+  if (penalty > 0 && changeScore(-penalty)) {
+    send("S" + score);
+  }
+}
+
+// ---------- Input ----------
+
+function exitKiosk() {
+  if (playing) {
+    endRound(true);
+  } else {
+    send("A");
+  }
+  ui.message.textContent = "Exiting...";
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    send("EXIT");
+  } else {
+    window.close();
+  }
+}
+
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "F1") {
+    e.preventDefault();
+    exitKiosk();
+    return;
+  }
+  const tag = e.target.tagName;
+  if (tag === "INPUT" || tag === "SELECT") {
+    if (e.key === "Escape") {
+      e.target.blur();
+    }
+    return;
+  }
+  if (e.repeat) {
+    return;
+  }
+  const key = e.key.toLowerCase();
+  if (key === " ") {
+    e.preventDefault();
+    startRound();
+  } else if (key === "escape") {
+    endRound(true);
+  } else if (!playing && (key === "1" || key === "2" || key === "3")) {
+    applyPreset(["easy", "medium", "hard"][Number(key) - 1]);
+  } else if (KEYS.includes(key) && key.length === 1) {
+    press(KEYS.indexOf(key) + 1);
+  }
+});
+
+ui.startBtn.addEventListener("click", (e) => {
+  e.currentTarget.blur();
+  startRound();
+});
+ui.stopBtn.addEventListener("click", (e) => {
+  e.currentTarget.blur();
+  endRound(true);
+});
+ui.resetBtn.addEventListener("click", () => {
+  writeForm(DEFAULTS);
+  settingsChanged();
+});
+ui.difficulty.addEventListener("change", () => {
+  if (PRESETS[ui.difficulty.value]) {
+    applyPreset(ui.difficulty.value);
+  } else {
+    settingsChanged();
+  }
+});
+for (const input of [ui.oranges, ui.orangeSec, ui.blueSec]) {
+  input.addEventListener("input", () => {
+    ui.difficulty.value = "custom";
+    settingsChanged();
+  });
+}
+for (const input of [ui.blueOn, ui.roundSeconds, ui.pointsPerHit, ui.bluePenalty, ui.missPenalty]) {
+  input.addEventListener("input", settingsChanged);
+}
+for (const input of document.querySelectorAll("input[type=number]")) {
+  input.addEventListener("change", () => writeForm(settings));
+}
+
+drawBoard();
+writeForm(settings);
+settings = readForm();
+showScore();
+showTime(settings.roundSeconds);
+showBest();
+render();
+connect();
+</script>
+</body>
+</html>
