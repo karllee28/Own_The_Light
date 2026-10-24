@@ -24,6 +24,11 @@ static const uint8_t PIXELS_PER_PIN = 16;
 static const uint16_t SK6812_TYPE = NEO_GRB + NEO_KHZ800;
 static const int SCORE_MAX = 9999;
 static const long TIME_MAX = 99999;
+// 0-100. 100 is full brightness for the 12 SK6812 chains. At 100% one chain
+// of 16 pixels draws about 0.4 A in orange, so size the 5V supply for all 12.
+static const uint8_t BRIGHTNESS_PERCENT = 100;
+static const uint8_t BRIGHTNESS =
+    (uint16_t)(BRIGHTNESS_PERCENT > 100 ? 100 : BRIGHTNESS_PERCENT) * 255 / 100;
 
 // RX pins A1 and A2 are unused. TX only: D2 score, D3 time.
 SoftwareSerial scoreLink(A1, 2);
@@ -245,7 +250,7 @@ void setup() {
   for (uint8_t i = 0; i < LED_COUNT; i++) {
     leds[i] = new Adafruit_NeoPixel(PIXELS_PER_PIN, LED_PINS[i], SK6812_TYPE);
     leds[i]->begin();
-    leds[i]->setBrightness(80);
+    leds[i]->setBrightness(BRIGHTNESS);
   }
   setAllOff();
   Serial.println("READY");

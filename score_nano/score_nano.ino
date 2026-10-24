@@ -29,6 +29,11 @@ static const uint8_t FONT_H = 16;
 // 100 fills the 16-pixel height of both 16x16 panels. 50 draws the score at half size.
 static const uint8_t FONT_SIZE_PERCENT = 65;
 static const int SCORE_MAX = 9999;
+// 0-100. 100 is full brightness. Higher values draw more current, so the
+// panels' 5V supply must be strong enough (about 3 A at 100% for red digits).
+static const uint8_t BRIGHTNESS_PERCENT = 16;
+static const uint8_t BRIGHTNESS =
+    (uint16_t)(BRIGHTNESS_PERCENT > 100 ? 100 : BRIGHTNESS_PERCENT) * 255 / 100;
 
 // 16 rows, bit 7 is the leftmost pixel. Two-pixel strokes, square corners.
 static const uint8_t DIGITS[10][FONT_H] = {
@@ -196,7 +201,7 @@ void handleLine(const char *text) {
 void setup() {
   link.begin(9600);
   strip.begin();
-  strip.setBrightness(40);
+  strip.setBrightness(BRIGHTNESS);
   drawScore(0);
 }
 

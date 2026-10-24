@@ -44,11 +44,34 @@
     align-items: flex-start;
   }
   .board {
+    position: relative;
     flex: 1 1 520px;
     max-width: 700px;
     background: #fff;
     border-radius: 12px;
     padding: 8px;
+  }
+  .countdown {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 180px;
+    font-weight: 800;
+    text-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+  }
+  .countdown.show { display: flex; }
+  .countdown.go { color: #3ee36b; }
+  .countdown span { animation: pop 0.9s ease-out both; }
+  @keyframes pop {
+    from { transform: scale(1.8); opacity: 0; }
+    25% { transform: scale(1); opacity: 1; }
+    to { transform: scale(0.9); opacity: 0.9; }
   }
   svg { width: 100%; height: auto; display: block; user-select: none; }
   .side { flex: 0 1 380px; display: flex; flex-direction: column; gap: 16px; }
@@ -77,6 +100,10 @@
   #startBtn { background: #1f9d45; }
   #stopBtn { background: #c0392b; }
   #resetBtn { background: #44444f; flex: none; padding: 8px 12px; font-size: 13px; }
+  .test-sounds button, .test-buttons button { background: #44444f; padding: 6px; font-size: 13px; }
+  .test-buttons [data-test="orange"] { background: #b85600; }
+  .test-buttons [data-test="blue"] { background: #1d4fbf; }
+  #volume { width: 140px; }
   fieldset { border: 0; padding: 0; margin: 0; }
   fieldset:disabled { opacity: 0.5; }
   .group + .group { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
@@ -135,6 +162,7 @@
 <main>
   <div class="board">
     <svg id="board" viewBox="30 80 900 930" aria-label="Game board"></svg>
+    <div id="countdown" class="countdown" aria-live="assertive"></div>
   </div>
 
   <div class="side">
@@ -211,13 +239,47 @@
             <input id="missPenalty" type="number" min="0" max="100" step="1">
           </div>
           <div class="row">
+            <label for="targetScore">Score needed to win</label>
+            <input id="targetScore" type="number" min="1" max="9999" step="1">
+          </div>
+          <div class="row">
             <span class="label">Best score in this mode</span>
             <span id="best">0</span>
           </div>
         </div>
 
+        <div class="group">
+          <h2>Sound</h2>
+          <div class="row">
+            <label for="soundOn">Sound effects</label>
+            <input id="soundOn" type="checkbox">
+          </div>
+          <div class="row">
+            <label for="volume">Volume</label>
+            <input id="volume" type="range" min="0" max="100" step="5">
+          </div>
+          <div class="row test-sounds">
+            <button type="button" data-sound="hit">Hit</button>
+            <button type="button" data-sound="miss">Miss</button>
+            <button type="button" data-sound="win">Win</button>
+            <button type="button" data-sound="lose">Lose</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Light test</h2>
+          <div class="row test-buttons">
+            <button type="button" data-test="orange">All orange</button>
+            <button type="button" data-test="blue">All blue</button>
+          </div>
+          <div class="row test-buttons">
+            <button type="button" data-test="chase">One by one</button>
+            <button type="button" data-test="off">All off</button>
+          </div>
+        </div>
+
         <div class="group row">
-          <span class="hint">Settings are saved in this browser.</span>
+          <span class="hint">Settings are saved automatically.</span>
           <button id="resetBtn" type="button">Reset to defaults</button>
         </div>
       </fieldset>
@@ -227,7 +289,7 @@
       Click or tap a light, or press its key: <kbd>A</kbd>–<kbd>L</kbd> for lights 1–12.
       Hit orange to score. Avoid blue.
       Keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick Easy, Medium, Hard between rounds.
-      <kbd>F1</kbd> exits full screen and stops the game.
+      <kbd>X</kbd> exits full screen and stops the game.
     </div>
   </div>
 </main>
@@ -267,6 +329,9 @@ const DEFAULTS = {
   pointsPerHit: 1,
   bluePenalty: 0,
   missPenalty: 0,
+  targetScore: 15,
+  soundOn: true,
+  volume: 70,
 };
 const SETTINGS_KEY = "otl-settings";
 const BEST_KEY = "otl-best";
@@ -274,6 +339,7 @@ const BEST_KEY = "otl-best";
 const $ = (id) => document.getElementById(id);
 const ui = {
   board: $("board"),
+  countdown: $("countdown"),
   status: $("status"),
   score: $("score"),
   time: $("time"),
@@ -291,6 +357,9 @@ const ui = {
   pointsPerHit: $("pointsPerHit"),
   bluePenalty: $("bluePenalty"),
   missPenalty: $("missPenalty"),
+  targetScore: $("targetScore"),
+  soundOn: $("soundOn"),
+  volume: $("volume"),
   best: $("best"),
 };
 
@@ -350,20 +419,73 @@ function clamp(value, min, max, fallback) {
   return Math.min(max, Math.max(min, value));
 }
 
-function loadSettings() {
+// Settings and best scores are saved by the bridge in ws-bridge/settings.json,
+// so they survive the kiosk browser being closed. localStorage is a backup
+// for when the page is opened without the bridge.
+let saveTimer = null;
+
+function loadLocal(key) {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+    return JSON.parse(localStorage.getItem(key) || "{}");
   } catch {
-    return { ...DEFAULTS };
+    return {};
   }
 }
 
-function saveSettings(s) {
+function saveLocal(key, value) {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Private mode or storage full: settings just won't persist.
+    // Private mode or storage full.
   }
+}
+
+function loadSettings() {
+  return { ...DEFAULTS, ...loadLocal(SETTINGS_KEY) };
+}
+
+function saveSettings(s) {
+  saveLocal(SETTINGS_KEY, s);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveToBridge, 300);
+}
+
+function saveToBridge() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  return fetch("settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings, best: bestScores }),
+  }).catch(() => {});
+}
+
+async function loadFromBridge() {
+  let data = null;
+  try {
+    const response = await fetch("settings", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+    data = await response.json();
+  } catch {
+    return;
+  }
+  if (!data.settings) {
+    saveToBridge();
+    return;
+  }
+  if (data.best) {
+    bestScores = data.best;
+    saveLocal(BEST_KEY, bestScores);
+  }
+  if (!busy()) {
+    writeForm({ ...DEFAULTS, ...data.settings });
+    settings = readForm();
+    saveLocal(SETTINGS_KEY, settings);
+    showTime(settings.roundSeconds);
+  }
+  showBest();
 }
 
 function writeForm(s) {
@@ -377,6 +499,10 @@ function writeForm(s) {
   ui.pointsPerHit.value = s.pointsPerHit;
   ui.bluePenalty.value = s.bluePenalty;
   ui.missPenalty.value = s.missPenalty;
+  ui.targetScore.value = s.targetScore;
+  ui.soundOn.checked = s.soundOn;
+  ui.volume.value = s.volume;
+  ui.volume.disabled = !s.soundOn;
 }
 
 function readForm() {
@@ -391,6 +517,9 @@ function readForm() {
     pointsPerHit: Math.round(clamp(n(ui.pointsPerHit), 1, 100, 1)),
     bluePenalty: Math.round(clamp(n(ui.bluePenalty), 0, 100, 0)),
     missPenalty: Math.round(clamp(n(ui.missPenalty), 0, 100, 0)),
+    targetScore: Math.round(clamp(n(ui.targetScore), 1, SCORE_MAX, DEFAULTS.targetScore)),
+    soundOn: ui.soundOn.checked,
+    volume: Math.round(clamp(n(ui.volume), 0, 100, DEFAULTS.volume)),
   };
 }
 
@@ -410,6 +539,7 @@ function settingsChanged() {
   settings = readForm();
   saveSettings(settings);
   ui.blueSec.disabled = !settings.blueOn;
+  ui.volume.disabled = !settings.soundOn;
   if (!playing) {
     showTime(settings.roundSeconds);
   }
@@ -420,27 +550,17 @@ function modeName() {
   return PRESETS[settings.difficulty] ? PRESETS[settings.difficulty].name : "Custom";
 }
 
-function loadBest() {
-  try {
-    return JSON.parse(localStorage.getItem(BEST_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
+let bestScores = loadLocal(BEST_KEY);
 
 function showBest() {
-  ui.best.textContent = loadBest()[settings.difficulty] || 0;
+  ui.best.textContent = bestScores[settings.difficulty] || 0;
 }
 
 function recordBest() {
-  const best = loadBest();
-  if (score > (best[settings.difficulty] || 0)) {
-    best[settings.difficulty] = score;
-    try {
-      localStorage.setItem(BEST_KEY, JSON.stringify(best));
-    } catch {
-      // Ignore storage errors.
-    }
+  if (score > (bestScores[settings.difficulty] || 0)) {
+    bestScores[settings.difficulty] = score;
+    saveLocal(BEST_KEY, bestScores);
+    saveToBridge();
     return true;
   }
   return false;
@@ -474,6 +594,108 @@ function send(...commands) {
   }
 }
 
+// ---------- Sound ----------
+
+// 8-bit style sounds made with the Web Audio API. A file named after a sound
+// in public/sounds (hit.mp4, win.mp4, ...) replaces the built-in version.
+// Only the audio track of an MP4 is played.
+const SOUND_NAMES = ["hit", "miss", "count", "start", "tick", "win", "lose"];
+const SOUND_TYPES = ["mp4", "m4a", "mp3", "wav", "ogg"];
+const soundFiles = {};
+let audioCtx = null;
+let masterGain = null;
+
+function audio() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) {
+      return null;
+    }
+    audioCtx = new Ctx();
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function tone(freq, start, duration, type, endFreq) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  if (endFreq) {
+    osc.frequency.exponentialRampToValueAtTime(endFreq, start + duration);
+  }
+  gain.gain.setValueAtTime(0.25, start);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+  osc.connect(gain).connect(masterGain);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+}
+
+// notes: [frequency in Hz, seconds]. A frequency of 0 is a rest.
+function melody(notes, type = "square") {
+  let t = audioCtx.currentTime + 0.01;
+  for (const [freq, duration] of notes) {
+    if (freq) {
+      tone(freq, t, duration * 0.95, type);
+    }
+    t += duration;
+  }
+}
+
+const SYNTH = {
+  hit: () => melody([[988, 0.07], [1319, 0.3]]),
+  miss: () => tone(160, audioCtx.currentTime + 0.01, 0.2, "square", 70),
+  count: () => tone(587, audioCtx.currentTime + 0.01, 0.25, "square"),
+  start: () => melody([[523, 0.09], [659, 0.09], [784, 0.09], [1047, 0.25]]),
+  tick: () => tone(880, audioCtx.currentTime + 0.01, 0.06, "square"),
+  win: () => melody([
+    [523, 0.1], [659, 0.1], [784, 0.1], [1047, 0.1], [1319, 0.1], [1568, 0.3],
+    [0, 0.05], [1319, 0.15], [1568, 0.6],
+  ]),
+  lose: () => melody([[494, 0.2], [466, 0.2], [440, 0.2], [415, 0.7]], "triangle"),
+};
+
+function play(name) {
+  if (!settings.soundOn || !audio()) {
+    return;
+  }
+  masterGain.gain.value = settings.volume / 100;
+  const buffer = soundFiles[name];
+  if (buffer) {
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(masterGain);
+    source.start();
+    return;
+  }
+  SYNTH[name]();
+}
+
+async function loadSoundFiles() {
+  if (!audio()) {
+    return;
+  }
+  for (const name of SOUND_NAMES) {
+    for (const type of SOUND_TYPES) {
+      try {
+        const response = await fetch("sounds/" + name + "." + type);
+        if (!response.ok) {
+          continue;
+        }
+        soundFiles[name] = await audioCtx.decodeAudioData(await response.arrayBuffer());
+        break;
+      } catch {
+        // Missing or unreadable file: keep the built-in sound.
+      }
+    }
+  }
+}
+
 // ---------- Game ----------
 
 let settings = loadSettings();
@@ -485,6 +707,9 @@ let orangeTimers = [];
 let blue = 0;
 let ticker = null;
 let blueTimer = null;
+const COUNTDOWN_SECONDS = 3;
+let countdownTimer = null;
+let overlayTimer = null;
 
 function formatTime(seconds) {
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
@@ -505,9 +730,70 @@ function showTime(seconds) {
 function render() {
   for (let chain = 1; chain <= CHAINS; chain++) {
     const node = nodes[chain];
-    node.classList.toggle("orange", oranges.includes(chain));
-    node.classList.toggle("blue", chain === blue);
+    node.classList.toggle("orange", oranges.includes(chain) || testColors[chain] === "orange");
+    node.classList.toggle("blue", chain === blue || testColors[chain] === "blue");
   }
+}
+
+// ---------- Light test ----------
+
+// chain number -> "orange" or "blue" while a light test is shown.
+let testColors = {};
+let testTimer = null;
+const TEST_STEP_MS = 500;
+
+function stopLightTest() {
+  clearTimeout(testTimer);
+  testTimer = null;
+  testColors = {};
+}
+
+function allChains() {
+  return Array.from({ length: CHAINS }, (_, i) => i + 1);
+}
+
+function lightTest(mode) {
+  if (busy()) {
+    return;
+  }
+  stopLightTest();
+  if (mode === "orange" || mode === "blue") {
+    const letter = mode === "orange" ? "O" : "B";
+    for (const chain of allChains()) {
+      testColors[chain] = mode;
+    }
+    send(...allChains().map((chain) => letter + chain));
+    ui.message.textContent = "Light test: all " + mode + ". Check that all 12 lights are " + mode + ".";
+  } else if (mode === "chase") {
+    let step = 0;
+    const next = () => {
+      const chain = Math.floor(step / 2) + 1;
+      const color = step % 2 === 0 ? "orange" : "blue";
+      if (chain > CHAINS) {
+        send("F" + CHAINS);
+        testColors = {};
+        testTimer = null;
+        ui.message.textContent = "Light test done.";
+        render();
+        return;
+      }
+      if (color === "orange" && chain > 1) {
+        send("F" + (chain - 1));
+      }
+      send((color === "orange" ? "O" : "B") + chain);
+      testColors = { [chain]: color };
+      ui.message.textContent = "Light test: light " + chain + " of " + CHAINS + " is " + color + ".";
+      render();
+      step++;
+      testTimer = setTimeout(next, TEST_STEP_MS);
+    };
+    next();
+    return;
+  } else {
+    send("A");
+    ui.message.textContent = "Light test: all lights off.";
+  }
+  render();
 }
 
 function flash(chain, kind) {
@@ -552,22 +838,78 @@ function stopTimers() {
   orangeTimers = [];
 }
 
-function setPlaying(value) {
-  playing = value;
+function setLocked(value) {
   ui.settings.disabled = value;
   ui.startBtn.disabled = value;
   ui.stopBtn.disabled = !value;
 }
 
+function busy() {
+  return playing || countdownTimer !== null;
+}
+
+function showCountdown(text) {
+  clearTimeout(overlayTimer);
+  ui.countdown.classList.add("show");
+  ui.countdown.classList.toggle("go", text === "GO!");
+  ui.countdown.innerHTML = "";
+  const span = document.createElement("span");
+  span.textContent = text;
+  ui.countdown.appendChild(span);
+}
+
+function hideCountdown() {
+  clearTimeout(overlayTimer);
+  ui.countdown.classList.remove("show", "go");
+  ui.countdown.innerHTML = "";
+}
+
 function startRound() {
-  if (playing) {
+  if (busy()) {
     return;
   }
+  stopLightTest();
+  render();
   settings = readForm();
   saveSettings(settings);
   writeForm(settings);
 
-  setPlaying(true);
+  setLocked(true);
+  score = 0;
+  showScore();
+  showTime(settings.roundSeconds);
+  send("A", "S0", "T" + settings.roundSeconds);
+  ui.message.textContent = "Get ready...";
+
+  // A custom start file plays as soon as Start is pressed, and replaces the
+  // built-in countdown beeps unless a custom count file is also present.
+  const customStart = Boolean(soundFiles.start);
+  const beeps = Boolean(soundFiles.count) || !customStart;
+  if (customStart) {
+    play("start");
+  }
+
+  let count = COUNTDOWN_SECONDS;
+  const step = () => {
+    if (count > 0) {
+      showCountdown(String(count));
+      if (beeps) {
+        play("count");
+      }
+      count--;
+      countdownTimer = setTimeout(step, 1000);
+      return;
+    }
+    countdownTimer = null;
+    showCountdown("GO!");
+    overlayTimer = setTimeout(hideCountdown, 700);
+    beginRound();
+  };
+  step();
+}
+
+function beginRound() {
+  playing = true;
   score = 0;
   timeLeft = settings.roundSeconds;
   oranges = [];
@@ -584,7 +926,11 @@ function startRound() {
   showScore();
   showTime(timeLeft);
   render();
-  ui.message.textContent = "Go! " + modeName() + " mode. Chase the orange lights.";
+  if (!soundFiles.start) {
+    play("start");
+  }
+  ui.message.textContent = "Go! " + modeName() + " mode. Reach " +
+    settings.targetScore + " points to win.";
 
   oranges.forEach((_, i) => scheduleOrange(i));
   if (blue) {
@@ -596,16 +942,28 @@ function startRound() {
     showTime(timeLeft);
     if (timeLeft <= 0) {
       endRound(false);
+    } else if (timeLeft <= 5) {
+      play("tick");
     }
   }, 1000);
 }
 
 function endRound(stopped) {
+  if (countdownTimer !== null) {
+    clearTimeout(countdownTimer);
+    countdownTimer = null;
+    hideCountdown();
+    setLocked(false);
+    send("A");
+    ui.message.textContent = "Countdown cancelled.";
+    return;
+  }
   if (!playing) {
     return;
   }
   stopTimers();
-  setPlaying(false);
+  playing = false;
+  setLocked(false);
   oranges = [];
   blue = 0;
   timeLeft = 0;
@@ -614,8 +972,15 @@ function endRound(stopped) {
   render();
   const newBest = recordBest();
   showBest();
-  ui.message.textContent = (stopped ? "Stopped. " : "Time's up! ") +
-    modeName() + " score: " + score + (newBest ? " (new best)" : "");
+  const best = newBest ? " (new best)" : "";
+  if (stopped) {
+    ui.message.textContent = "Stopped. " + modeName() + " score: " + score + best;
+    return;
+  }
+  const won = score >= settings.targetScore;
+  play(won ? "win" : "lose");
+  ui.message.textContent = (won ? "You win! " : "You lose. ") +
+    "Score " + score + " of " + settings.targetScore + " needed." + best;
 }
 
 function changeScore(delta) {
@@ -634,11 +999,13 @@ function press(chain) {
   if (i >= 0) {
     changeScore(settings.pointsPerHit);
     flash(chain, "good");
+    play("hit");
     moveOrange(i, "S" + score);
     return;
   }
   const penalty = chain === blue ? settings.bluePenalty : settings.missPenalty;
   flash(chain, "bad");
+  play("miss");
   if (penalty > 0 && changeScore(-penalty)) {
     send("S" + score);
   }
@@ -646,13 +1013,15 @@ function press(chain) {
 
 // ---------- Input ----------
 
-function exitKiosk() {
-  if (playing) {
+async function exitKiosk() {
+  stopLightTest();
+  if (busy()) {
     endRound(true);
   } else {
     send("A");
   }
   ui.message.textContent = "Exiting...";
+  await Promise.race([saveToBridge(), new Promise((r) => setTimeout(r, 1000))]);
   if (socket && socket.readyState === WebSocket.OPEN) {
     send("EXIT");
   } else {
@@ -663,7 +1032,7 @@ function exitKiosk() {
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "F1") {
+  if ((e.key === "x" || e.key === "X") && !e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();
     exitKiosk();
     return;
@@ -684,7 +1053,7 @@ document.addEventListener("keydown", (e) => {
     startRound();
   } else if (key === "escape") {
     endRound(true);
-  } else if (!playing && (key === "1" || key === "2" || key === "3")) {
+  } else if (!busy() && (key === "1" || key === "2" || key === "3")) {
     applyPreset(["easy", "medium", "hard"][Number(key) - 1]);
   } else if (KEYS.includes(key) && key.length === 1) {
     press(KEYS.indexOf(key) + 1);
@@ -716,9 +1085,27 @@ for (const input of [ui.oranges, ui.orangeSec, ui.blueSec]) {
     settingsChanged();
   });
 }
-for (const input of [ui.blueOn, ui.roundSeconds, ui.pointsPerHit, ui.bluePenalty, ui.missPenalty]) {
+for (const input of [
+  ui.blueOn, ui.roundSeconds, ui.pointsPerHit, ui.bluePenalty, ui.missPenalty,
+  ui.targetScore, ui.soundOn, ui.volume,
+]) {
   input.addEventListener("input", settingsChanged);
 }
+for (const button of document.querySelectorAll("[data-test]")) {
+  button.addEventListener("click", () => {
+    button.blur();
+    lightTest(button.dataset.test);
+  });
+}
+for (const button of document.querySelectorAll("[data-sound]")) {
+  button.addEventListener("click", () => {
+    button.blur();
+    play(button.dataset.sound);
+  });
+}
+// Browsers keep audio muted until the first click or key press.
+document.addEventListener("pointerdown", audio, { once: true });
+document.addEventListener("keydown", audio, { once: true });
 for (const input of document.querySelectorAll("input[type=number]")) {
   input.addEventListener("change", () => writeForm(settings));
 }
@@ -731,6 +1118,8 @@ showTime(settings.roundSeconds);
 showBest();
 render();
 connect();
+loadFromBridge();
+loadSoundFiles();
 </script>
 </body>
 </html>

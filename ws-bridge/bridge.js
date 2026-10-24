@@ -11,7 +11,7 @@
 // A message may hold several commands separated by newlines ("B1\nO3").
 // The game page in public/index.html is served at http://localhost:8080.
 // With --kiosk the page opens full screen in Edge or Chrome. The page sends
-// EXIT when F1 is pressed, which closes the kiosk and stops the bridge.
+// EXIT when X is pressed, which closes the kiosk and stops the bridge.
 
 const fs = require("fs");
 const http = require("http");
@@ -105,31 +105,132 @@ port.open((err) => {
 });
 
 const PAGE = path.join(__dirname, "public", "index.html");
+const SOUNDS = path.join(__dirname, "public", "sounds");
+const AUDIO_TYPES = {
+  mp4: "audio/mp4",
+  m4a: "audio/mp4",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+};
+
+function notFound(response) {
+  response.writeHead(404, { "Content-Type": "text/plain" });
+  response.end("Not found");
+}
+
+function serveFile(response, file, type) {
+  fs.readFile(file, (err, data) => {
+    if (err) {
+      notFound(response);
+      return;
+    }
+    response.writeHead(200, { "Content-Type": type });
+    response.end(data);
+  });
+}
+
+// Settings and best scores from the game page.
+const SETTINGS_FILE = path.join(__dirname, "settings.json");
+const SETTINGS_LIMIT = 16 * 1024;
+
+function sendSettings(response) {
+  fs.readFile(SETTINGS_FILE, "utf8", (err, text) => {
+    response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    response.end(err ? "{}" : text);
+  });
+}
+
+function saveSettings(request, response) {
+  const chunks = [];
+  let size = 0;
+  request.on("data", (chunk) => {
+    size += chunk.length;
+    if (size > SETTINGS_LIMIT) {
+      response.writeHead(413, { "Content-Type": "text/plain" });
+      response.end("Too large");
+      request.destroy();
+      return;
+    }
+    chunks.push(chunk);
+  });
+  request.on("end", () => {
+    if (size > SETTINGS_LIMIT) {
+      return;
+    }
+    let data = null;
+    try {
+      data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      // Handled below.
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      response.writeHead(400, { "Content-Type": "text/plain" });
+      response.end("Expected a JSON object");
+      return;
+    }
+    // Write a temp file first so a crash cannot leave half a settings file.
+    const temp = SETTINGS_FILE + ".tmp";
+    fs.writeFile(temp, JSON.stringify(data, null, 2), (err) => {
+      if (err) {
+        console.error("Could not save settings: " + err.message);
+        response.writeHead(500, { "Content-Type": "text/plain" });
+        response.end("Could not save");
+        return;
+      }
+      fs.rename(temp, SETTINGS_FILE, (renameErr) => {
+        if (renameErr) {
+          console.error("Could not save settings: " + renameErr.message);
+        }
+        response.writeHead(renameErr ? 500 : 204);
+        response.end();
+      });
+    });
+  });
+}
 
 const server = http.createServer((request, response) => {
   const url = request.url.split("?")[0];
-  if (request.method !== "GET" || (url !== "/" && url !== "/index.html")) {
-    response.writeHead(404, { "Content-Type": "text/plain" });
-    response.end("Not found");
+  if (url === "/settings") {
+    if (request.method === "GET") {
+      sendSettings(response);
+    } else if (request.method === "PUT") {
+      saveSettings(request, response);
+    } else {
+      notFound(response);
+    }
     return;
   }
-  fs.readFile(PAGE, (err, html) => {
-    if (err) {
-      response.writeHead(500, { "Content-Type": "text/plain" });
-      response.end("Could not read public/index.html");
-      return;
-    }
-    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    response.end(html);
-  });
+  if (request.method !== "GET") {
+    notFound(response);
+    return;
+  }
+  if (url === "/" || url === "/index.html") {
+    serveFile(response, PAGE, "text/html; charset=utf-8");
+    return;
+  }
+  const sound = /^\/sounds\/([a-z0-9_-]+)\.(mp4|m4a|mp3|wav|ogg)$/i.exec(url);
+  if (sound) {
+    const ext = sound[2].toLowerCase();
+    serveFile(response, path.join(SOUNDS, sound[1] + "." + ext), AUDIO_TYPES[ext]);
+    return;
+  }
+  notFound(response);
 });
 
 const wss = new WebSocketServer({ server });
 
-server.on("error", (err) => {
-  console.error("Server error: " + err.message);
+function serverError(err) {
+  if (err.code === "EADDRINUSE") {
+    console.error("Port " + wsPort + " is already in use. Is the bridge already running in another window?");
+  } else {
+    console.error("Server error: " + err.message);
+  }
   process.exit(1);
-});
+}
+
+server.on("error", serverError);
+wss.on("error", serverError);
 
 server.listen(wsPort, () => {
   console.log("Game page on http://localhost:" + wsPort);
@@ -166,6 +267,7 @@ function openKiosk(url) {
     "--no-first-run",
     "--disable-pinch",
     "--overscroll-history-navigation=0",
+    "--autoplay-policy=no-user-gesture-required",
     "--user-data-dir=" + path.join(os.tmpdir(), "own-the-light-kiosk"),
   ], { stdio: "ignore" });
   browser.on("error", (err) => {
@@ -175,7 +277,7 @@ function openKiosk(url) {
   browser.on("exit", () => {
     browser = null;
   });
-  console.log("Kiosk open. Press F1 on the game page to exit.");
+  console.log("Kiosk open. Press X on the game page to exit.");
 }
 
 function closeBrowser() {

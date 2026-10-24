@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "difficulty": "easy",
+    "oranges": 6,
+    "orangeMs": 2000,
+    "blueOn": true,
+    "blueMs": 1200,
+    "roundSeconds": 30,
+    "pointsPerHit": 1,
+    "bluePenalty": 0,
+    "missPenalty": 0,
+    "targetScore": 1,
+    "soundOn": true,
+    "volume": 70
+  },
+  "best": {
+    "easy": 70
+  }
+}

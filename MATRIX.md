@@ -18,7 +18,7 @@ D3 (time)  --+  (one wire only)
 GND supply ------------------------------------------------> GND
 ```
 
-Do not power the matrix from the Nano 5V pin. A 256-pixel panel can draw several amps at full white. The sketches set brightness to 40, which lowers that, but the panel still needs its own 5V supply. Tie the supply ground to the Nano ground.
+Do not power the matrix from the Nano 5V pin. A 256-pixel panel can draw several amps at full white. The sketches set `BRIGHTNESS_PERCENT` to 16, which lowers that, but the panel still needs its own 5V supply. Tie the supply ground to the Nano ground.
 
 ## Wires on one display Nano
 

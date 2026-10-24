@@ -76,6 +76,18 @@ The score sketch uses `LAYOUT_ROW` for each 16x16 panel. Set it to `LAYOUT_COLUM
 - Each of the 12 master chains is 16 pixels on one data pin (`PIXELS_PER_PIN` in `master.ino`), 192 pixels in total. `B1` lights all 16 pixels on D4. `F1` turns that chain off without changing the others.
 - Join all grounds: all three Nanos, the time matrix, both score panels, and the 12 chains.
 
+### Brightness
+
+Each sketch has a `BRIGHTNESS_PERCENT` setting near the top, from 0 to 100. 100 is full brightness. Change the number and upload that sketch to its Nano again.
+
+| Lights | Sketch | Default |
+| --- | --- | --- |
+| Score display | `score_nano/score_nano.ino` | 16 |
+| Time display | `time_nano/time_nano.ino` | 16 |
+| 12 game light chains | `master/master.ino` | 31 |
+
+Higher values draw more current. At 100%, red digits on the score panels can draw about 3 A, the time matrix 1–2 A, and each game chain about 0.4 A in orange. Check that the 5V supply can deliver that before raising the brightness.
+
 ## Serial commands
 
 Send one command per line to the master USB port at **115200**. The master answers `OK` or `ERR` on that same port. Letters are not case-sensitive, and one space is allowed after the letter (`B 1` is the same as `B1`).
@@ -187,9 +199,9 @@ One message can carry one command, or several separated by newlines (`"B1" & new
 
 ### Game page in the browser
 
-The quickest way to start everything is to double-click **`run-all.bat`** in the project folder. It installs the packages on the first run, finds the master Nano's COM port, starts the bridge, and opens the game page full screen in kiosk mode (Edge, or Chrome if Edge is missing). If more than one COM port is found, it lists them and asks which one to use. To skip the question, run `run-all.bat COM5` from a terminal.
+The quickest way to start everything is to double-click **`run-all.bat`** in the project folder. It installs the packages on the first run, finds the master Nano's COM port, starts the bridge, and opens the game page full screen in kiosk mode (Edge, or Chrome if Edge is missing). The script remembers the last COM port it used, saved in `ws-bridge/last-port.txt`. If that port is plugged in, it is used without asking. Otherwise the script looks for the Nano. If exactly one COM port is found, it uses that one. If there are none or several, it lists them and asks, and pressing Enter picks the last port. To choose a port directly, run `run-all.bat COM5` from a terminal. That port is then remembered for next time. Delete `last-port.txt` to forget the saved port.
 
-Press **F1** on the game page to exit. F1 ends any round, turns all lights off, closes the full-screen window, and stops the bridge. Right-click is disabled on the page so players cannot open browser menus. If the page has lost its connection to the bridge, F1 only closes the window, and Ctrl+C in the script window stops the bridge. To start the kiosk without the script, run `node bridge.js COM5 --kiosk` in `ws-bridge`.
+Press **X** on the game page to exit. X ends any round, turns all lights off, closes the full-screen window, and stops the bridge. It works during a round too, so players should not press it by accident. Right-click is disabled on the page so players cannot open browser menus. If the page has lost its connection to the bridge, X only closes the window, and Ctrl+C in the script window stops the bridge. To start the kiosk without the script, run `node bridge.js COM5 --kiosk` in `ws-bridge`.
 
 The bridge also serves a game page. Start the bridge, wait for `Nano: READY`, then open **http://localhost:8080** in a browser. The page connects to the bridge automatically and shows `Bridge connected` in the top right corner.
 
@@ -201,9 +213,11 @@ node bridge.js COM5
 
 The page draws the board from the switch and LED layout drawing. Lights 1–10 are in the same places as in the drawing. Lights 11 and 12 sit at the ends of the two diagonal lines that start at 1 and 2. The black box at the top shows the score and time, like the matrix displays.
 
-To play, click or tap a light, or press its key (`A`–`L` for lights 1–12). SPACE or **Start** begins a round. ESC or **Stop** ends it early. Lights on the page change color together with the real chains.
+To play, click or tap a light, or press its key (`A`–`L` for lights 1–12). SPACE or **Start** begins a 3-second countdown. Large `3`, `2`, `1` numbers appear over the board with a beep on each, then `GO!` and the round starts. The lights stay off and button presses do nothing during the countdown. ESC or **Stop** cancels the countdown or ends a round early. Lights on the page change color together with the real chains.
 
-Settings can be changed between rounds and are saved in the browser:
+Settings can be changed between rounds. Every change is saved right away by the bridge in `ws-bridge/settings.json`, together with the best score for each mode. They are loaded again the next time the page opens, even after exiting the kiosk with X, restarting the PC, or using a different browser. To go back to the defaults, press **Reset to defaults**, or delete `settings.json` while the bridge is stopped.
+
+The settings are:
 
 | Group | Setting | Range | Default |
 | --- | --- | --- | --- |
@@ -216,10 +230,59 @@ Settings can be changed between rounds and are saved in the browser:
 | Score | Points per orange hit | 1–100 | 1 |
 | Score | Penalty for hitting blue | 0–100 | 0 |
 | Score | Penalty for an unlit button | 0–100 | 0 |
+| Score | Score needed to win | 1–9999 | 15 |
+| Sound | Sound effects | On or off | On |
+| Sound | Volume | 0–100 | 70 |
 
 Picking Easy, Medium, or Hard fills in the three timing fields with the values from the difficulty table below. Editing any of them switches the mode to Custom. The score never drops below 0 or goes above 9999. The page also keeps the best score for each mode.
 
 The page and `game.js` both send commands to the same lights, so run only one of them at a time.
+
+#### Light test
+
+The **Light test** buttons in the settings check the wiring of the 12 chains without starting a game. The board on the page shows the same colors, so you can compare it with the real lights.
+
+| Button | What it does |
+| --- | --- |
+| **All orange** | Lights all 12 chains orange. |
+| **All blue** | Lights all 12 chains blue. |
+| **One by one** | Lights chain 1 orange, then blue, then moves to chain 2, and so on up to 12, half a second per color. Use it to check that each chain is wired to the right position. |
+| **All off** | Turns every chain off and stops a One by one test. |
+
+A light that stays dark points to a wiring, power, or data pin problem on that chain. A light that shows the wrong color points to a color order problem: see `SK6812_TYPE` in `master.ino`. The test buttons are locked during a round. Starting a round or pressing X stops any test.
+
+#### Sounds
+
+The page plays 8-bit style sound effects through the PC speakers:
+
+| Sound | When |
+| --- | --- |
+| `hit` | A coin sound when an orange light is hit. |
+| `miss` | A low bump when blue or an unlit button is pressed. |
+| `count` | A beep on each number of the 3, 2, 1 countdown. |
+| `start` | A short rising jingle on "GO!" when the round starts. A `start` file of your own plays as soon as Start is pressed instead (see below). |
+| `tick` | A beep each second for the last 5 seconds. |
+| `win` | A fanfare when the round ends with at least the score needed to win. |
+| `lose` | A falling "wah wah" when the round ends below that score. |
+
+Stopping a round with ESC or **Stop** plays neither win nor lose. The **Hit**, **Miss**, **Win**, and **Lose** buttons under Sound play each effect so you can set the volume.
+
+The sounds are generated by the browser, so no audio files are needed. To use your own, put one MP4 file per sound in `ws-bridge/public/sounds`:
+
+```
+ws-bridge/public/sounds/
+  hit.mp4
+  miss.mp4
+  count.mp4
+  start.mp4
+  tick.mp4
+  win.mp4
+  lose.mp4
+```
+
+Each file replaces only its own sound, and any missing file keeps the built-in sound.
+
+A custom `start` file is treated differently because it is usually a longer intro. It plays the moment Start is pressed, and the built-in countdown beeps are skipped so they do not play over it. Nothing extra plays on "GO!". If you also add a custom `count` file, it plays on each number of the countdown together with your start file. A start file of about 3 seconds lines up with the countdown. A longer one keeps playing into the round. Only the audio track of an MP4 plays. A video track is ignored, so keep the files short and small. The file names must be lowercase and exactly as shown. M4A, MP3, WAV, and OGG also work (`hit.mp3`, for example). If two files exist for one sound, the MP4 is used. Reload the page or restart `run-all.bat` after adding files. Only use audio you have the rights to. Sound clips ripped from Nintendo games are copyrighted.
 
 ### Keyboard game without Construct 3
 
